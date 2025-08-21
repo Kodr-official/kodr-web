@@ -4,6 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Header } from '@/components/layout/Header';
 import { Plus, DollarSign, Clock, Users } from 'lucide-react';
@@ -35,6 +38,10 @@ const Projects = () => {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isApplyOpen, setIsApplyOpen] = useState(false);
+  const [bidAmount, setBidAmount] = useState<string>('');
+  const [experienceYears, setExperienceYears] = useState<string>('');
+  const [applicationMessage, setApplicationMessage] = useState<string>('');
   interface ProjectApplication {
     id: string;
     message: string;
@@ -42,6 +49,8 @@ const Projects = () => {
     created_at: string;
     coder_id: string;
     project_id: string;
+    bid_amount?: number | null;
+    experience_years?: number | null;
     profiles: {
       id: string;
       full_name: string;
@@ -150,6 +159,55 @@ const Projects = () => {
     return updateApplicationStatus(applicationId, 'rejected');
   };
 
+  // Submit application with bid and experience fields from dialog
+  const handleSubmitApplication = async () => {
+    if (!user || !selectedProject) return;
+
+    const bid = bidAmount ? parseFloat(bidAmount) : null;
+    const exp = experienceYears ? parseInt(experienceYears, 10) : null;
+
+    if (bid !== null && (isNaN(bid) || bid < 0)) {
+      toast.error('Please enter a valid bid amount');
+      return;
+    }
+    if (exp !== null && (isNaN(exp) || exp < 0)) {
+      toast.error('Please enter valid years of experience');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('project_applications')
+        .insert({
+          project_id: selectedProject.id,
+          coder_id: user.id,
+          message: applicationMessage || 'I would like to apply for this project.',
+          status: 'pending',
+          bid_amount: bid,
+          experience_years: exp,
+        } as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast.success('Application submitted successfully!');
+      setIsApplyOpen(false);
+      setBidAmount('');
+      setExperienceYears('');
+      setApplicationMessage('');
+
+      await Promise.all([fetchProjects(), fetchMyApplications()]);
+    } catch (err: any) {
+      console.error('Error submitting application:', err);
+      if (err?.code === '23505') {
+        toast.error('You have already applied to this project');
+      } else {
+        toast.error('Failed to submit application. Please try again.');
+      }
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchProjects();
@@ -225,87 +283,102 @@ const Projects = () => {
     }
   };
 
-  const ProjectCard = ({ project, showActions = false }: { project: Project; showActions?: boolean }) => (
-    <Card className="hover-lift">
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-lg">{project.title}</CardTitle>
-            <p className="text-sm text-foreground-muted">by {project.hirer.full_name}</p>
-          </div>
-          <Badge className={getStatusColor(project.status)}>
-            {project.status.replace('_', ' ')}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-foreground-muted mb-4 line-clamp-3">{project.description}</p>
-        
-        <div className="space-y-3">
-          <div className="flex items-center space-x-4 text-sm text-foreground-muted">
-            <div className="flex items-center space-x-1">
-              <DollarSign className="w-4 h-4" />
-              <span>{formatBudget(project.budget_min, project.budget_max)}</span>
+  const ProjectCard = ({ project, showActions = false }: { project: Project; showActions?: boolean }) => {
+    const { profile, user } = useAuth();
+    
+    const handleViewDetails = async () => {
+      setSelectedProject(project);
+      setIsDetailsOpen(true);
+      if (profile?.role === 'hirer') {
+        const apps = await fetchProjectApplications(project.id);
+        setProjectApplications(apps);
+      }
+    };
+
+    const handleApplyClick = async () => {
+      if (!user) {
+        toast.error('Please log in to apply for projects');
+        return;
+      }
+
+      // Open the application form dialog
+      setSelectedProject(project);
+      setIsApplyOpen(true);
+    };
+
+    return (
+      <Card className="hover-lift">
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="text-lg">{project.title}</CardTitle>
+              <p className="text-sm text-foreground-muted">by {project.hirer.full_name}</p>
             </div>
-            {project.timeline && (
-              <div className="flex items-center space-x-1">
-                <Clock className="w-4 h-4" />
-                <span>{project.timeline}</span>
+            <Badge className={getStatusColor(project.status)}>
+              {project.status.replace('_', ' ')}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <DollarSign className="h-4 w-4 text-foreground-muted" />
+                <span className="text-sm">{formatBudget(project.budget_min, project.budget_max)}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Clock className="h-4 w-4 text-foreground-muted" />
+                <span className="text-sm">{project.timeline || 'Flexible'}</span>
+              </div>
+            </div>
+
+            {project.description && (
+              <p className="text-sm text-foreground-muted line-clamp-3">
+                {project.description}
+              </p>
+            )}
+
+            {project.project_skills?.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {project.project_skills.map(({ skills }) => (
+                  <Badge key={skills.name} variant="outline" className="text-xs">
+                    {skills.name}
+                  </Badge>
+                ))}
               </div>
             )}
-          </div>
 
-          {project.project_skills && project.project_skills.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {project.project_skills.slice(0, 4).map((skill, index) => (
-                <Badge key={index} variant="secondary" className="text-xs">
-                  {skill.skills.name}
-                </Badge>
-              ))}
-              {project.project_skills.length > 4 && (
-                <Badge variant="outline" className="text-xs">
-                  +{project.project_skills.length - 4} more
-                </Badge>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-foreground-muted">
-              Posted {new Date(project.created_at).toLocaleDateString()}
-            </span>
-            <div className="flex space-x-2">
-              {showActions && (
-                <Button size="sm" variant="outline" onClick={async () => {
-                  setSelectedProject(project);
-                  setIsDetailsOpen(true);
-                  const apps = await fetchProjectApplications(project.id);
-                  setProjectApplications(apps);
-                }}>
-                  View Applications
-                </Button>
-              )}
-              <Button 
-                size="sm" 
-                onClick={async () => {
-                  if (profile?.role === 'coder') {
-                    handleApplyToProject(project.id);
-                  } else {
-                    setSelectedProject(project);
-                    setIsDetailsOpen(true);
-                    const apps = await fetchProjectApplications(project.id);
-                    setProjectApplications(apps);
-                  }
-                }}
-              >
-                {profile?.role === 'coder' ? 'Apply' : 'View Details'}
-              </Button>
+            <div className="flex items-center justify-between pt-2">
+              <span className="text-xs text-foreground-muted">
+                Posted {new Date(project.created_at).toLocaleDateString()}
+              </span>
+              <div className="flex space-x-2">
+                {showActions && (
+                  <>
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      onClick={handleViewDetails}
+                    >
+                      View Details
+                    </Button>
+                    {profile?.role === 'coder' && (
+                      <Button 
+                        size="sm" 
+                        onClick={handleApplyClick}
+                      >
+                        Apply Now
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   const handleApplyToProject = async (projectId: string) => {
     if (!user) {
@@ -527,6 +600,52 @@ const Projects = () => {
     <div className="min-h-screen bg-background">
       <Header />
       <div className="container mx-auto px-4 py-8">
+        {/* Apply Dialog */}
+        <Dialog open={isApplyOpen} onOpenChange={setIsApplyOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Apply to {selectedProject?.title || 'Project'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="bidAmount">Your bid amount (USD)</Label>
+                <Input
+                  id="bidAmount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 500"
+                  value={bidAmount}
+                  onChange={(e) => setBidAmount(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="experienceYears">Years of experience</Label>
+                <Input
+                  id="experienceYears"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 3"
+                  value={experienceYears}
+                  onChange={(e) => setExperienceYears(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="applicationMessage">Message</Label>
+                <Textarea
+                  id="applicationMessage"
+                  placeholder="Tell the hirer why you're a great fit."
+                  value={applicationMessage}
+                  onChange={(e) => setApplicationMessage(e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setIsApplyOpen(false)}>Cancel</Button>
+                <Button onClick={handleSubmitApplication}>Submit Application</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
         {/* Project Details Dialog */}
         <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
           <DialogContent className="w-[90vw] max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -582,6 +701,22 @@ const Projects = () => {
                                   {app.message && (
                                     <div className="mt-2 p-3 bg-muted/20 rounded-md border border-border">
                                       <p className="text-sm text-foreground/90 leading-relaxed">{app.message}</p>
+                                    </div>
+                                  )}
+                                  {(app.bid_amount != null || app.experience_years != null) && (
+                                    <div className="flex items-center gap-4 text-sm text-foreground/90">
+                                      {app.bid_amount != null && (
+                                        <div className="flex items-center gap-1">
+                                          <DollarSign className="h-4 w-4 text-foreground-muted" />
+                                          <span>Bid: ${app.bid_amount}</span>
+                                        </div>
+                                      )}
+                                      {app.experience_years != null && (
+                                        <div className="flex items-center gap-1">
+                                          <Users className="h-4 w-4 text-foreground-muted" />
+                                          <span>Experience: {app.experience_years} {app.experience_years === 1 ? 'year' : 'years'}</span>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                   <div className="flex justify-between items-center mt-3 pt-3 border-t border-border/50">
@@ -706,7 +841,7 @@ const Projects = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map((project) => (
-                  <ProjectCard key={project.id} project={project} />
+                  <ProjectCard key={project.id} project={project} showActions={true} />
                 ))}
               </div>
             )}
@@ -777,6 +912,22 @@ const Projects = () => {
                               {application.message && (
                                 <div className="bg-muted/50 p-3 rounded-md mb-3">
                                   <p className="text-foreground">{application.message}</p>
+                                </div>
+                              )}
+                              {(application.bid_amount != null || application.experience_years != null) && (
+                                <div className="flex items-center gap-4 text-sm text-foreground/90 mb-2">
+                                  {application.bid_amount != null && (
+                                    <div className="flex items-center gap-1">
+                                      <DollarSign className="h-4 w-4 text-foreground-muted" />
+                                      <span>Bid: ${application.bid_amount}</span>
+                                    </div>
+                                  )}
+                                  {application.experience_years != null && (
+                                    <div className="flex items-center gap-1">
+                                      <Users className="h-4 w-4 text-foreground-muted" />
+                                      <span>Experience: {application.experience_years} {application.experience_years === 1 ? 'year' : 'years'}</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               <div className="flex items-center justify-between mt-3">

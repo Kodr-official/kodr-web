@@ -17,6 +17,7 @@ import CoderProfile from "./pages/CoderProfile";
 import TeamProfile from "./pages/TeamProfile";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Study from "./pages/Study";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
               <Route path="/" element={<Index />} />
               <Route path="/browse" element={<Browse />} />
               <Route path="/projects" element={<Projects />} />
+              <Route path="/study" element={<Study />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/login" element={<Login />} />

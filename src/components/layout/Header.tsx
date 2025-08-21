@@ -23,12 +23,14 @@ import {
   Settings, 
   LogOut,
   Menu,
-  X
+  X,
+  BookOpen
 } from 'lucide-react';
 
 const navigation = [
   { name: 'Browse', href: '/browse', icon: Search },
   { name: 'Projects', href: '/projects', icon: FolderOpen },
+  { name: 'Study', href: '/study', icon: BookOpen },
   { name: 'Messages', href: '/messages', icon: MessageSquare },
 ];
 
