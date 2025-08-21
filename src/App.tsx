@@ -15,6 +15,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CoderProfile from "./pages/CoderProfile";
 import TeamProfile from "./pages/TeamProfile";
+import Teams from "./pages/Teams";
+import CreateTeam from "./pages/CreateTeam";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Study from "./pages/Study";
@@ -32,6 +34,8 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/browse" element={<Browse />} />
+              <Route path="/teams" element={<Teams />} />
+              <Route path="/teams/create" element={<CreateTeam />} />
               <Route path="/projects" element={<Projects />} />
               <Route path="/study" element={<Study />} />
               <Route path="/messages" element={<Messages />} />

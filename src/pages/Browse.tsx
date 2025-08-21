@@ -12,6 +12,7 @@ import { Database } from '@/integrations/supabase/types';
 import { useAuth } from '@/lib/auth';
 import { Search, Star, Users, MessageSquare, MapPin, Clock, UserPlus, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 type Profile = Database['public']['Tables']['profiles']['Row'];
 type Team = Database['public']['Tables']['teams']['Row'] & {
@@ -31,6 +32,7 @@ const Browse = () => {
   const [followStatus, setFollowStatus] = useState<Record<string, boolean>>({});
   const [skillFilter, setSkillFilter] = useState('all');
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchCoders();
@@ -80,58 +82,43 @@ const Browse = () => {
     }
   };
 
-  const startChat = async (userId: string) => {
+  const startChat = async (userId: string, userName: string) => {
     if (!user) {
       toast.error('Please sign in to start a chat');
       return;
     }
     
     try {
-      // Check if conversation already exists between users
-      const { data: existingConvos, error: convosError } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id')
-        .in('user_id', [user.id, userId])
-        .not('conversation_id', 'is', null);
+      // Get existing conversations from localStorage
+      const existingConvos = JSON.parse(localStorage.getItem('mock_conversations') || '[]');
+      
+      // Check if conversation already exists
+      const existingConv = existingConvos.find((conv: any) => 
+        conv.other_user_id === userId
+      );
 
-      if (convosError) throw convosError;
-
-      // Find common conversation ID
-      const conversationCounts = (existingConvos || []).reduce((acc, curr) => {
-        acc[curr.conversation_id] = (acc[curr.conversation_id] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const existingConversationId = Object.entries(conversationCounts)
-        .find(([_, count]) => count >= 2)?.[0];
-
-      if (existingConversationId) {
+      if (existingConv) {
         // Navigate to existing conversation
-        window.location.href = `/messages?conversation=${existingConversationId}`;
+        navigate(`/messages?conversation=${existingConv.id}`);
         return;
       }
 
       // Create new conversation
-      const { data: newConversation, error: createError } = await supabase
-        .from('conversations')
-        .insert({})
-        .select('id')
-        .single();
+      const newConv = {
+        id: `conv_${Date.now()}`,
+        other_user_id: userId,
+        other_user_name: userName,
+        other_user_avatar: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 50) + 1}`,
+        last_message: 'Conversation started',
+        last_message_at: new Date().toISOString(),
+      };
 
-      if (createError || !newConversation) throw createError || new Error('Failed to create conversation');
-
-      // Add participants
-      const { error: participantError } = await supabase
-        .from('conversation_participants')
-        .insert([
-          { conversation_id: newConversation.id, user_id: user.id },
-          { conversation_id: newConversation.id, user_id: userId }
-        ]);
-
-      if (participantError) throw participantError;
-
+      // Save to localStorage
+      const updatedConvs = [...existingConvos, newConv];
+      localStorage.setItem('mock_conversations', JSON.stringify(updatedConvs));
+      
       // Navigate to new conversation
-      window.location.href = `/messages?conversation=${newConversation.id}`;
+      navigate(`/messages?conversation=${newConv.id}`);
       
     } catch (error) {
       console.error('Error starting chat:', error);
@@ -327,7 +314,7 @@ const Browse = () => {
             disabled={!user}
             onClick={(e) => {
               e.stopPropagation();
-              startChat(coder.id);
+              startChat(coder.id, coder.full_name);
             }}
           >
             <MessageSquare className="w-4 h-4 mr-2" />

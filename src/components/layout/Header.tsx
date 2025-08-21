@@ -31,6 +31,7 @@ const navigation = [
   { name: 'Browse', href: '/browse', icon: Search },
   { name: 'Projects', href: '/projects', icon: FolderOpen },
   { name: 'Study', href: '/study', icon: BookOpen },
+  { name: 'Teams', href: '/teams', icon: Users },
   { name: 'Messages', href: '/messages', icon: MessageSquare },
 ];
 
