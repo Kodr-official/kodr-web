@@ -20,6 +20,7 @@ import CreateTeam from "./pages/CreateTeam";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Study from "./pages/Study";
+import PaymentReturn from "./pages/PaymentReturn";
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ const App = () => (
               <Route path="/coder/:id" element={<CoderProfile />} />
               <Route path="/team/:id" element={<TeamProfile />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/payment/return" element={<PaymentReturn />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

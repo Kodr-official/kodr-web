@@ -261,7 +261,8 @@ const Projects = () => {
   }, [user]);
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase
+    // First try including new 'active' status (post-migration). If enum isn't updated yet, fallback to 'open' only.
+    const baseSelect = () => supabase
       .from('projects')
       .select(`
         *,
@@ -269,9 +270,22 @@ const Projects = () => {
           skills(name, category)
         ),
         hirer:profiles!projects_hirer_id_fkey(full_name, avatar_url)
-      `)
-      .eq('status', 'open')
-      .order('created_at', { ascending: false });
+      `);
+
+    let data: any = null;
+    let error: any = null;
+
+    // Attempt with ['open','active']
+    ({ data, error } = await baseSelect()
+      .in('status', ['open', 'active'] as any)
+      .order('created_at', { ascending: false }));
+
+    // If enum 'active' not present (22P02 invalid input value), fallback to 'open' only
+    if (error && (error.code === '22P02' || error.message?.includes('invalid input value for enum'))) {
+      ({ data, error } = await baseSelect()
+        .eq('status', 'open')
+        .order('created_at', { ascending: false }));
+    }
 
     if (error) {
       console.error('Error fetching projects:', error);
@@ -314,10 +328,34 @@ const Projects = () => {
     return 'Budget not specified';
   };
 
+  const getBudgetText = (p: any) => {
+    if (p?.budget != null) {
+      return `$${p.budget}`;
+    }
+    return formatBudget(p?.budget_min ?? null, p?.budget_max ?? null);
+  };
+
+  const getBiddingInfo = (p: any) => {
+    const endIso = p?.bidding_end_time as string | null;
+    if (!endIso) return { text: null, isClosed: false };
+    const end = new Date(endIso).getTime();
+    const now = Date.now();
+    const diff = end - now;
+    if (diff <= 0) return { text: 'Bidding closed', isClosed: true };
+    const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+    const hours = Math.floor((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    const mins = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+    const parts = [days ? `${days}d` : null, hours ? `${hours}h` : null, mins ? `${mins}m` : null].filter(Boolean);
+    return { text: `Bidding ends in ${parts.join(' ') || 'less than 1m'}`, isClosed: false };
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'open': return 'bg-success text-success-foreground';
+      case 'active': return 'bg-success text-success-foreground';
       case 'in_progress': return 'bg-warning text-warning-foreground';
+      case 'closed': return 'bg-muted text-muted-foreground';
+      case 'draft': return 'bg-muted text-muted-foreground';
       case 'completed': return 'bg-primary text-primary-foreground';
       case 'cancelled': return 'bg-destructive text-destructive-foreground';
       default: return 'bg-muted text-muted-foreground';
@@ -365,13 +403,19 @@ const Projects = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <DollarSign className="h-4 w-4 text-foreground-muted" />
-                <span className="text-sm">{formatBudget(project.budget_min, project.budget_max)}</span>
+                <span className="text-sm">{getBudgetText(project as any)}</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Clock className="h-4 w-4 text-foreground-muted" />
-                <span className="text-sm">{project.timeline || 'Flexible'}</span>
+                <span className="text-sm">{(project as any).timeline_date || project.timeline || 'Flexible'}</span>
               </div>
             </div>
+
+            {project.status === 'active' && (project as any).bidding_end_time && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{getBiddingInfo(project as any).text}</span>
+              </div>
+            )}
 
             {project.description && (
               <p className="text-sm text-foreground-muted line-clamp-3">
@@ -403,14 +447,20 @@ const Projects = () => {
                     >
                       View Details
                     </Button>
-                    {profile?.role === 'coder' && (
-                      <Button
-                        size="sm"
-                        onClick={handleApplyClick}
-                      >
-                        Apply Now
-                      </Button>
-                    )}
+                    {profile?.role === 'coder' && (() => {
+                      const { isClosed } = getBiddingInfo(project as any);
+                      const canApply = (project.status === 'active' || project.status === 'open') && !isClosed;
+                      return (
+                        <Button
+                          size="sm"
+                          onClick={handleApplyClick}
+                          disabled={!canApply}
+                          title={!canApply ? 'Bidding is closed' : 'Apply to this project'}
+                        >
+                          {canApply ? 'Apply Now' : 'Bidding Closed'}
+                        </Button>
+                      );
+                    })()}
                   </>
                 )}
               </div>
@@ -643,7 +693,7 @@ const Projects = () => {
       <div className="container mx-auto px-4 py-8">
         {/* Apply Dialog */}
         <Dialog open={isApplyOpen} onOpenChange={setIsApplyOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg" aria-describedby={undefined}>
             <DialogHeader>
               <DialogTitle>Apply to {selectedProject?.title || 'Project'}</DialogTitle>
             </DialogHeader>
@@ -734,7 +784,7 @@ const Projects = () => {
         </Dialog>
         {/* Project Details Dialog */}
         <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-          <DialogContent className="w-[90vw] max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="w-[90vw] max-w-5xl max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
             {selectedProject && (
               <div className="flex flex-col lg:flex-row gap-6">
                 {/* Left column - Project details */}
