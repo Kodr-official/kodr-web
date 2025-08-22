@@ -51,6 +51,26 @@ const CreateTeam = () => {
     );
   }
 
+  // Block hirers from creating teams
+  if (profile?.role === 'hirer') {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-8 space-y-4">
+          <h1 className="text-2xl font-bold">Create a Team</h1>
+          <Card>
+            <CardContent className="p-6">
+              <p className="text-muted-foreground">Only coder accounts can create teams. Switch to a coder account to proceed.</p>
+              <div className="mt-4">
+                <Button onClick={() => navigate('/teams')}>Back to Teams</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   if (!loading && myTeamId) {
     return (
       <div className="min-h-screen bg-background">
@@ -71,6 +91,10 @@ const CreateTeam = () => {
   }
 
   const onSubmit = () => {
+    if (profile?.role === 'hirer') {
+      toast.error('Only coders can create teams');
+      return;
+    }
     if (!name.trim()) return toast.error('Team name is required');
     if (name.trim().length < 3) return toast.error('Team name must be at least 3 characters');
     if (desc.length > 250) return toast.error('Description must be at most 250 characters');

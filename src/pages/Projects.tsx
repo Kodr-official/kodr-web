@@ -42,6 +42,11 @@ const Projects = () => {
   const [bidAmount, setBidAmount] = useState<string>('');
   const [experienceYears, setExperienceYears] = useState<string>('');
   const [applicationMessage, setApplicationMessage] = useState<string>('');
+  // Apply as individual or team
+  const [applyMode, setApplyMode] = useState<'individual' | 'team'>('individual');
+  const [ownedTeams, setOwnedTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('');
+
   interface ProjectApplication {
     id: string;
     message: string;
@@ -74,7 +79,7 @@ const Projects = () => {
         .single();
 
       if (error) throw error;
-      
+
       // Get the application details for notification
       const { data: appWithDetails } = await supabase
         .from('project_applications')
@@ -85,7 +90,7 @@ const Projects = () => {
       if (appWithDetails) {
         try {
           console.log('App with details:', appWithDetails);
-          
+
           // First, verify we have the required data
           if (!appWithDetails.coder_id) {
             throw new Error('Missing coder_id in application');
@@ -93,19 +98,19 @@ const Projects = () => {
           if (!appWithDetails.project_id) {
             throw new Error('Missing project_id in application');
           }
-          
+
           // Get project title
           const projectTitle = appWithDetails.projects?.title || 'a project';
           const notificationTitle = `Application ${status.charAt(0).toUpperCase() + status.slice(1)}`;
           const notificationMessage = `Your application for project "${projectTitle}" has been ${status}.`;
-          
+
           console.log('Sending notification with:', {
             user_id: appWithDetails.coder_id,
             title: notificationTitle,
             message: notificationMessage,
             type: status
           });
-          
+
           // Use the database function to send notification
           const { data, error } = await supabase.rpc('send_notification', {
             p_user_id: appWithDetails.coder_id,
@@ -114,19 +119,19 @@ const Projects = () => {
             p_type: status,
             p_related_id: appWithDetails.project_id
           });
-          
+
           if (error) {
             console.error('Database function error:', error);
             throw error;
           }
-          
+
           if (!data?.success) {
             console.error('Notification function returned error:', data);
             throw new Error(data?.error || 'Failed to send notification');
           }
-          
+
           console.log('Notification sent successfully:', data);
-          
+
         } catch (notifErr) {
           console.error('Error in notification process:', notifErr);
           // Don't fail the whole operation if notification fails
@@ -176,12 +181,32 @@ const Projects = () => {
     }
 
     try {
+      // Enforce team owner rule
+      if (applyMode === 'team') {
+        if (!selectedTeamId) {
+          toast.error('Select a team to apply as');
+          return;
+        }
+        const ownsTeam = ownedTeams.some(t => t.id === selectedTeamId);
+        if (!ownsTeam) {
+          toast.error('Only the team owner can apply on behalf of a team');
+          return;
+        }
+      }
+
+      const teamPrefix = applyMode === 'team'
+        ? (() => {
+          const t = ownedTeams.find(t => t.id === selectedTeamId);
+          return t ? `[Applied as Team: ${t.name} | ${t.id}]\n` : '[Applied as Team]\n';
+        })()
+        : '';
+
       const { error } = await supabase
         .from('project_applications')
         .insert({
           project_id: selectedProject.id,
           coder_id: user.id,
-          message: applicationMessage || 'I would like to apply for this project.',
+          message: `${teamPrefix}${applicationMessage || 'I would like to apply for this project.'}`,
           status: 'pending',
           bid_amount: bid,
           experience_years: exp,
@@ -196,6 +221,8 @@ const Projects = () => {
       setBidAmount('');
       setExperienceYears('');
       setApplicationMessage('');
+      setApplyMode('individual');
+      setSelectedTeamId('');
 
       await Promise.all([fetchProjects(), fetchMyApplications()]);
     } catch (err: any) {
@@ -218,6 +245,20 @@ const Projects = () => {
       }
     }
   }, [user, profile]);
+
+  // Load teams owned by the user for team applications
+  useEffect(() => {
+    const loadOwnedTeams = async () => {
+      if (!user) return;
+      const { data, error } = await supabase
+        .from('teams')
+        .select('id, name')
+        .eq('owner_id', user.id)
+        .order('name', { ascending: true });
+      if (!error && data) setOwnedTeams(data as any);
+    };
+    loadOwnedTeams();
+  }, [user]);
 
   const fetchProjects = async () => {
     const { data, error } = await supabase
@@ -285,7 +326,7 @@ const Projects = () => {
 
   const ProjectCard = ({ project, showActions = false }: { project: Project; showActions?: boolean }) => {
     const { profile, user } = useAuth();
-    
+
     const handleViewDetails = async () => {
       setSelectedProject(project);
       setIsDetailsOpen(true);
@@ -355,16 +396,16 @@ const Projects = () => {
               <div className="flex space-x-2">
                 {showActions && (
                   <>
-                    <Button 
-                      size="sm" 
-                      variant="outline" 
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={handleViewDetails}
                     >
                       View Details
                     </Button>
                     {profile?.role === 'coder' && (
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         onClick={handleApplyClick}
                       >
                         Apply Now
@@ -387,7 +428,7 @@ const Projects = () => {
     }
 
     console.log('Applying to project:', projectId, 'for user:', user.id);
-    
+
     try {
       const { data, error } = await supabase
         .from('project_applications')
@@ -395,7 +436,7 @@ const Projects = () => {
           project_id: projectId,
           coder_id: user.id,
           message: 'I would like to apply for this project.',
-          status: 'pending'  // Ensure status is set
+          status: 'pending'
         })
         .select()
         .single();
@@ -412,13 +453,13 @@ const Projects = () => {
 
       console.log('Application successful, data:', data);
       toast.success('Application submitted successfully');
-      
+
       // Refresh both projects and applications
       await Promise.all([
         fetchProjects(),
         fetchMyApplications()
       ]);
-      
+
     } catch (err) {
       console.error('Unexpected error in handleApply:', err);
       toast.error('An error occurred while applying');
@@ -432,7 +473,7 @@ const Projects = () => {
     }
 
     console.log('=== START: Fetching applications for user:', user.id);
-    
+
     try {
       // First, verify the user exists in the profiles table
       const { data: profileData, error: profileError } = await supabase
@@ -470,7 +511,7 @@ const Projects = () => {
 
       // Get unique project IDs from applications
       const projectIds = [...new Set(applications.map(app => app.project_id))];
-      
+
       // Fetch project details for these applications
       const { data: projectsData, error: projectsError } = await supabase
         .from('projects')
@@ -501,7 +542,7 @@ const Projects = () => {
 
       console.log('Successfully fetched and combined application data:', combinedData);
       setApplications(combinedData);
-      
+
     } catch (err) {
       console.error('Unexpected error in fetchMyApplications:', err);
       toast.error('An error occurred while loading your applications');
@@ -513,7 +554,7 @@ const Projects = () => {
   const fetchProjectApplications = async (projectId: string) => {
     try {
       console.log('Fetching applications for project:', projectId);
-      
+
       // First, get the applications
       const { data: applications, error: appsError } = await supabase
         .from('project_applications')
@@ -540,7 +581,7 @@ const Projects = () => {
       // Get profiles in batches if needed (Supabase has a limit on IN clause)
       const batchSize = 50;
       let allProfiles: any[] = [];
-      
+
       for (let i = 0; i < coderIds.length; i += batchSize) {
         const batch = coderIds.slice(i, i + batchSize);
         const { data: profiles, error: profilesError } = await supabase
@@ -607,6 +648,51 @@ const Projects = () => {
               <DialogTitle>Apply to {selectedProject?.title || 'Project'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Apply as selector */}
+              <div className="space-y-2">
+                <Label>Apply as</Label>
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="applyMode"
+                      value="individual"
+                      checked={applyMode === 'individual'}
+                      onChange={() => setApplyMode('individual')}
+                    />
+                    Individual
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="applyMode"
+                      value="team"
+                      checked={applyMode === 'team'}
+                      onChange={() => setApplyMode('team')}
+                    />
+                    Team (owner only)
+                  </label>
+                </div>
+                {applyMode === 'team' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="teamSelect">Select your team</Label>
+                    <select
+                      id="teamSelect"
+                      className="w-full border rounded px-3 py-2 bg-background"
+                      value={selectedTeamId}
+                      onChange={(e) => setSelectedTeamId(e.target.value)}
+                    >
+                      <option value="">-- Choose a team you own --</option>
+                      {ownedTeams.map(t => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    {ownedTeams.length === 0 && (
+                      <p className="text-xs text-muted-foreground">You don't own any teams. Create a team to apply as a team.</p>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="bidAmount">Your bid amount (USD)</Label>
                 <Input

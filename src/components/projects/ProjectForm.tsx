@@ -27,6 +27,8 @@ export function ProjectForm({ onSuccess }: ProjectFormProps) {
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
   const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [skillSelectValue, setSkillSelectValue] = useState<string>("");
+  const [hirePreference, setHirePreference] = useState<"individual" | "team" | "either">("either");
 
   useEffect(() => {
     fetchSkills();
@@ -51,6 +53,7 @@ export function ProjectForm({ onSuccess }: ProjectFormProps) {
     if (skill && !selectedSkills.find(s => s.id === skillId)) {
       setSelectedSkills([...selectedSkills, skill]);
     }
+    setSkillSelectValue("");
   };
 
   const removeSkill = (skillId: string) => {
@@ -64,13 +67,12 @@ export function ProjectForm({ onSuccess }: ProjectFormProps) {
     setIsLoading(true);
 
     try {
-      // Create the project
       const { data: project, error: projectError } = await supabase
         .from('projects')
         .insert({
           hirer_id: user.id,
           title,
-          description,
+          description: `[Hire Preference: ${hirePreference}]\n\n${description}`,
           budget_min: budgetMin ? parseInt(budgetMin) : null,
           budget_max: budgetMax ? parseInt(budgetMax) : null,
           timeline: timeline || null,
@@ -81,7 +83,6 @@ export function ProjectForm({ onSuccess }: ProjectFormProps) {
 
       if (projectError) throw projectError;
 
-      // Add skills to the project
       if (selectedSkills.length > 0) {
         const projectSkills = selectedSkills.map(skill => ({
           project_id: project.id,
@@ -164,8 +165,22 @@ export function ProjectForm({ onSuccess }: ProjectFormProps) {
       </div>
 
       <div>
+        <Label>Who are you looking to hire?</Label>
+        <Select value={hirePreference} onValueChange={(v) => setHirePreference(v as any)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select preference" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="individual">Individual coder</SelectItem>
+            <SelectItem value="team">Whole team</SelectItem>
+            <SelectItem value="either">Either</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
         <Label>Required Skills</Label>
-        <Select onValueChange={addSkill}>
+        <Select value={skillSelectValue} onValueChange={addSkill}>
           <SelectTrigger>
             <SelectValue placeholder="Add a skill" />
           </SelectTrigger>

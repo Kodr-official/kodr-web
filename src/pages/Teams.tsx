@@ -162,7 +162,7 @@ const Teams = () => {
       <div className="container mx-auto px-4 py-8 space-y-8">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Teams</h1>
-          {user && !myTeam && (
+          {user && !myTeam && profile?.role !== 'hirer' && (
             <Button onClick={() => navigate('/teams/create')}>Create a Team</Button>
           )}
         </div>
